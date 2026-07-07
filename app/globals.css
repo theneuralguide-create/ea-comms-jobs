@@ -163,6 +163,24 @@ body {
   color: var(--ink-faint);
 }
 
+.area-select {
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: var(--ink-soft);
+  outline: none;
+  cursor: pointer;
+  max-width: 240px;
+  transition: border-color 0.15s ease;
+}
+
+.area-select:focus {
+  border-color: var(--accent);
+}
+
 .toggle {
   display: flex;
   align-items: center;

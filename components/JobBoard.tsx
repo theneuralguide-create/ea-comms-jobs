@@ -80,6 +80,7 @@ export default function JobBoard({ jobs }: { jobs: Job[] }) {
   const [category, setCategory] = useState<JobCategory | "All">("All");
   const [query, setQuery] = useState("");
   const [remoteOnly, setRemoteOnly] = useState(false);
+  const [area, setArea] = useState("All");
 
   const counts = useMemo(() => {
     const c = new Map<string, number>();
@@ -87,10 +88,18 @@ export default function JobBoard({ jobs }: { jobs: Job[] }) {
     return c;
   }, [jobs]);
 
+  const areas = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const j of jobs)
+      for (const a of j.areas) c.set(a, (c.get(a) ?? 0) + 1);
+    return [...c.entries()].sort((a, b) => b[1] - a[1]);
+  }, [jobs]);
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return jobs.filter((j) => {
       if (category !== "All" && j.category !== category) return false;
+      if (area !== "All" && !j.areas.includes(area)) return false;
       if (remoteOnly && !j.remote) return false;
       if (
         q &&
@@ -101,7 +110,7 @@ export default function JobBoard({ jobs }: { jobs: Job[] }) {
         return false;
       return true;
     });
-  }, [jobs, category, query, remoteOnly]);
+  }, [jobs, category, query, remoteOnly, area]);
 
   let lastBucket = "";
 
@@ -130,6 +139,19 @@ export default function JobBoard({ jobs }: { jobs: Job[] }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          <select
+            className="area-select"
+            value={area}
+            onChange={(e) => setArea(e.target.value)}
+            aria-label="Filter by cause area"
+          >
+            <option value="All">All cause areas</option>
+            {areas.map(([name, count]) => (
+              <option key={name} value={name}>
+                {name} ({count})
+              </option>
+            ))}
+          </select>
           <label className="toggle">
             <input
               type="checkbox"
