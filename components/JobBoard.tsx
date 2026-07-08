@@ -23,7 +23,12 @@ function postedLabel(unix: number): string {
   if (d === 1) return "Posted yesterday";
   if (d < 7) return `Posted ${d} days ago`;
   if (d < 30) return `Posted ${Math.floor(d / 7)}w ago`;
-  return `Posted ${Math.floor(d / 30)}mo ago`;
+  if (d < 365) return `Posted ${Math.floor(d / 30)}mo ago`;
+  // A handful of listings are perpetual rolling-application pages ("General
+  // Applications", "Volunteer, General Application") whose timestamps never
+  // reflect a real posting date, so an exact month count beyond a year would
+  // be false precision rather than useful information.
+  return "Posted over a year ago";
 }
 
 function closingSoon(job: Job): boolean {

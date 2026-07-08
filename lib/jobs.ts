@@ -40,6 +40,7 @@ interface AlgoliaHit {
   description_short: string;
   url_external: string;
   posted_at: number;
+  created_at: number;
   closes_at: number | null;
   salary: string;
   salary_type: string;
@@ -99,6 +100,7 @@ export async function fetchJobs(): Promise<{ jobs: Job[]; fetchedAt: number }> {
           "description_short",
           "url_external",
           "posted_at",
+          "created_at",
           "closes_at",
           "salary",
           "salary_type",
@@ -144,7 +146,12 @@ export async function fetchJobs(): Promise<{ jobs: Job[]; fetchedAt: number }> {
       areas: hit.tags_area ?? [],
       roleType: hit.tags_role_type ?? [],
       descriptionHtml: hit.description_short ?? "",
-      postedAt: hit.posted_at,
+      // Some rolling/evergreen listings never get posted_at refreshed and are
+      // stuck on a bulk-import placeholder from ~Jan 2022; created_at (when
+      // 80k's system last touched the record) is the more reliable recency
+      // signal for those. For normally-refreshed listings posted_at is the
+      // larger value, so this doesn't change anything for them.
+      postedAt: Math.max(hit.posted_at, hit.created_at),
       closesAt: hit.closes_at,
       category: match.category,
       core: match.core,
