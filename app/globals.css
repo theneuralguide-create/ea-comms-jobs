@@ -350,38 +350,28 @@ body {
   flex-shrink: 0;
 }
 
-.card details {
+.card.clickable {
+  cursor: pointer;
+}
+
+.disclosure {
   margin-top: 12px;
   border-top: 1px dashed var(--line);
   padding-top: 10px;
 }
 
-.card summary {
+.disclosure-label {
   font-size: 13px;
   font-weight: 500;
   color: var(--accent);
-  cursor: pointer;
   user-select: none;
-  list-style: none;
-}
-
-.card summary::-webkit-details-marker {
-  display: none;
-}
-
-.card summary::after {
-  content: " ↓";
-  font-size: 11px;
-}
-
-.card details[open] summary::after {
-  content: " ↑";
 }
 
 .desc {
   font-size: 13.5px;
   color: var(--ink-soft);
   margin-top: 6px;
+  cursor: auto;
 }
 
 .desc ul {

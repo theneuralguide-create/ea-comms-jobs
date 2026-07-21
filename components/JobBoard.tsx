@@ -81,6 +81,92 @@ const levelIcon = (
   </svg>
 );
 
+// Stop a click on a link/action from also toggling the card's description.
+const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+function JobCard({ job }: { job: Job }) {
+  const [open, setOpen] = useState(false);
+  const hasDesc = Boolean(job.descriptionHtml);
+
+  return (
+    <article
+      className={`card${hasDesc ? " clickable" : ""}`}
+      onClick={hasDesc ? () => setOpen((o) => !o) : undefined}
+    >
+      <div className="card-top">
+        <Logo job={job} />
+        <div className="card-head">
+          {/* Title and org are plain text (not links) so a click anywhere on
+              the card reliably toggles the description. Navigation to the
+              posting is handled solely by the "View & apply" button. */}
+          <h2>{job.title}</h2>
+          <p className="org-line">
+            <strong>{job.org}</strong>
+            {job.areas.length > 0 && <> · {job.areas.join(", ")}</>}
+          </p>
+        </div>
+        <div className="badges">
+          {daysAgo(job.postedAt) <= 3 && <span className="badge new">NEW</span>}
+          {closingSoon(job) && (
+            <span className="badge closing">Closing soon</span>
+          )}
+          <span className="badge cat">{job.category}</span>
+        </div>
+      </div>
+
+      <div className="fact-row">
+        {job.locations.length > 0 && (
+          <span className="fact">
+            {pinIcon}
+            {job.locations.slice(0, 3).join(" · ")}
+            {job.locations.length > 3 && ` +${job.locations.length - 3}`}
+          </span>
+        )}
+        {job.salary && (
+          <span className="fact">
+            {cashIcon}
+            {job.salary}
+          </span>
+        )}
+        {job.experience.length > 0 && (
+          <span className="fact">
+            {levelIcon}
+            {job.experience.join(", ")}
+          </span>
+        )}
+      </div>
+
+      {hasDesc && (
+        <div className="disclosure">
+          <span className="disclosure-label">
+            About this role {open ? "↑" : "↓"}
+          </span>
+          {open && (
+            <div
+              className="desc"
+              onClick={stop}
+              dangerouslySetInnerHTML={{ __html: job.descriptionHtml }}
+            />
+          )}
+        </div>
+      )}
+
+      <div className="card-actions">
+        <a
+          className="apply"
+          href={job.applyUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={stop}
+        >
+          View &amp; apply →
+        </a>
+        <span className="posted">{postedLabel(job.postedAt)}</span>
+      </div>
+    </article>
+  );
+}
+
 export default function JobBoard({ jobs }: { jobs: Job[] }) {
   const [category, setCategory] = useState<JobCategory | "All">("All");
   const [query, setQuery] = useState("");
@@ -182,90 +268,7 @@ export default function JobBoard({ jobs }: { jobs: Job[] }) {
           return (
             <div key={job.id}>
               {showLabel && <p className="day-label">{bucket}</p>}
-              <article className="card">
-                <div className="card-top">
-                  <Logo job={job} />
-                  <div className="card-head">
-                    <h2>
-                      <a
-                        href={job.applyUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {job.title}
-                      </a>
-                    </h2>
-                    <p className="org-line">
-                      {job.orgUrl ? (
-                        <a
-                          href={job.orgUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {job.org}
-                        </a>
-                      ) : (
-                        <strong>{job.org}</strong>
-                      )}
-                      {job.areas.length > 0 && <> · {job.areas.join(", ")}</>}
-                    </p>
-                  </div>
-                  <div className="badges">
-                    {daysAgo(job.postedAt) <= 3 && (
-                      <span className="badge new">NEW</span>
-                    )}
-                    {closingSoon(job) && (
-                      <span className="badge closing">Closing soon</span>
-                    )}
-                    <span className="badge cat">{job.category}</span>
-                  </div>
-                </div>
-
-                <div className="fact-row">
-                  {job.locations.length > 0 && (
-                    <span className="fact">
-                      {pinIcon}
-                      {job.locations.slice(0, 3).join(" · ")}
-                      {job.locations.length > 3 &&
-                        ` +${job.locations.length - 3}`}
-                    </span>
-                  )}
-                  {job.salary && (
-                    <span className="fact">
-                      {cashIcon}
-                      {job.salary}
-                    </span>
-                  )}
-                  {job.experience.length > 0 && (
-                    <span className="fact">
-                      {levelIcon}
-                      {job.experience.join(", ")}
-                    </span>
-                  )}
-                </div>
-
-                {job.descriptionHtml && (
-                  <details>
-                    <summary>About this role</summary>
-                    <div
-                      className="desc"
-                      dangerouslySetInnerHTML={{ __html: job.descriptionHtml }}
-                    />
-                  </details>
-                )}
-
-                <div className="card-actions">
-                  <a
-                    className="apply"
-                    href={job.applyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    View &amp; apply →
-                  </a>
-                  <span className="posted">{postedLabel(job.postedAt)}</span>
-                </div>
-              </article>
+              <JobCard job={job} />
             </div>
           );
         })}

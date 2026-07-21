@@ -82,6 +82,107 @@ function categorize(hit: AlgoliaHit): { category: JobCategory; core: boolean } |
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Dead-listing detection
+//
+// The 80k board occasionally keeps a role in its index for a while after the
+// underlying posting closes. To catch those, every listing is verified against
+// the applicant-tracking system it links to. Crucially, the public *career
+// pages* for the big ATSs (Greenhouse, Ashby) are single-page apps that return
+// HTTP 200 and render "job not found" only in JavaScript — so a status check on
+// the page URL is useless. Their JSON APIs, however, return a real 404 (or omit
+// the posting) once a role is gone, which is what we probe here.
+//
+// Providers we can't verify server-side (Google/OpenAI block bots or render
+// entirely client-side) return "unknown" and are kept — we only ever remove a
+// listing we can positively confirm is dead, never on a timeout or ambiguity.
+//
+// Each probe is cached for ~3.5 days, so with the 6-hour page revalidation every
+// live listing gets re-checked roughly twice a week without any stored state.
+// ---------------------------------------------------------------------------
+
+type Liveness = "alive" | "dead" | "unknown";
+
+const LIVENESS_TTL = Math.floor(3.5 * 24 * 60 * 60); // ~twice weekly
+const PROBE_TIMEOUT = 10000;
+
+async function cachedFetch(url: string): Promise<Response | null> {
+  try {
+    return await fetch(url, {
+      headers: { "User-Agent": "ea-comms-jobs-linkcheck/1.0" },
+      signal: AbortSignal.timeout(PROBE_TIMEOUT),
+      next: { revalidate: LIVENESS_TTL },
+    });
+  } catch {
+    return null; // network error / timeout → treat as unknown
+  }
+}
+
+// Confirmed dead only on a clean 404/410 from the provider's API.
+async function statusProbe(apiUrl: string): Promise<Liveness> {
+  const res = await cachedFetch(apiUrl);
+  if (!res) return "unknown";
+  if (res.status === 404 || res.status === 410) return "dead";
+  if (res.ok) return "alive";
+  return "unknown";
+}
+
+// Ashby has no per-job endpoint; its board API lists every *live* posting, so a
+// posting absent from that list is closed.
+async function ashbyProbe(org: string, id: string): Promise<Liveness> {
+  const res = await cachedFetch(
+    `https://api.ashbyhq.com/posting-api/job-board/${org}`
+  );
+  if (!res) return "unknown";
+  if (res.status === 404) return "dead"; // whole board gone
+  if (!res.ok) return "unknown";
+  try {
+    const data = (await res.json()) as { jobs?: Array<{ id: string }> };
+    const ids = new Set((data.jobs ?? []).map((j) => j.id));
+    return ids.has(id) ? "alive" : "dead";
+  } catch {
+    return "unknown";
+  }
+}
+
+async function probeListing(applyUrl: string): Promise<Liveness> {
+  let host: string;
+  let path: string;
+  try {
+    const u = new URL(applyUrl);
+    host = u.hostname;
+    path = u.pathname;
+  } catch {
+    return "unknown";
+  }
+
+  // Greenhouse: /{board}/jobs/{numericId}
+  if (host.includes("greenhouse.io")) {
+    const m = path.match(/\/([^/]+)\/jobs\/(\d+)/);
+    if (!m) return "unknown";
+    const api = host.startsWith("job-boards.eu")
+      ? "https://boards-api.eu.greenhouse.io"
+      : "https://boards-api.greenhouse.io";
+    return statusProbe(`${api}/v1/boards/${m[1]}/jobs/${m[2]}`);
+  }
+
+  // Lever: /{company}/{uuid}
+  if (host.includes("lever.co")) {
+    const m = path.match(/\/([^/]+)\/([0-9a-f-]{36})/i);
+    if (!m) return "unknown";
+    return statusProbe(`https://api.lever.co/v0/postings/${m[1]}/${m[2]}`);
+  }
+
+  // Ashby: /{org}/{uuid}
+  if (host.includes("ashbyhq.com")) {
+    const m = path.match(/\/([^/]+)\/([0-9a-f-]{36})/i);
+    if (!m) return "unknown";
+    return ashbyProbe(m[1], m[2]);
+  }
+
+  return "unknown"; // provider we can't verify → keep the listing
+}
+
 export async function fetchJobs(): Promise<{ jobs: Job[]; fetchedAt: number }> {
   const res = await fetch(
     `https://${ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes/${ALGOLIA_INDEX}/query`,
@@ -172,6 +273,14 @@ export async function fetchJobs(): Promise<{ jobs: Job[]; fetchedAt: number }> {
     });
   }
 
-  jobs.sort((a, b) => b.postedAt - a.postedAt);
-  return { jobs, fetchedAt: Math.floor(Date.now() / 1000) };
+  // Verify each surviving listing still points at an open posting, and drop the
+  // ones we can positively confirm are closed. Probes run in parallel and are
+  // individually cached, so this is cheap on all but the ~twice-weekly refresh.
+  const liveness = await Promise.all(
+    jobs.map((job) => probeListing(job.applyUrl))
+  );
+  const live = jobs.filter((_, i) => liveness[i] !== "dead");
+
+  live.sort((a, b) => b.postedAt - a.postedAt);
+  return { jobs: live, fetchedAt: Math.floor(Date.now() / 1000) };
 }
