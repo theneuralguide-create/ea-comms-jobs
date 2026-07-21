@@ -44,6 +44,7 @@ interface AlgoliaHit {
   closes_at: number | null;
   salary: string;
   salary_type: string;
+  repost: boolean;
   highlighted: boolean;
   company_name: string;
   company_url: string;
@@ -104,6 +105,7 @@ export async function fetchJobs(): Promise<{ jobs: Job[]; fetchedAt: number }> {
           "closes_at",
           "salary",
           "salary_type",
+          "repost",
           "highlighted",
           "company_name",
           "company_url",
@@ -125,10 +127,21 @@ export async function fetchJobs(): Promise<{ jobs: Job[]; fetchedAt: number }> {
   if (!res.ok) throw new Error(`Algolia request failed: ${res.status}`);
   const data = (await res.json()) as { hits: AlgoliaHit[] };
 
+  // Auto-retire stale listings: anything last posted more than 6 months ago
+  // is dropped so the board doesn't accumulate dead roles. A job the source
+  // has re-posted is kept regardless of age — reposting is the signal that a
+  // role is still open. Because the site re-fetches every 6 hours, this
+  // pruning happens automatically; nothing is stored, so there is no separate
+  // cron/cleanup job to run.
+  const STALE_AFTER = 183 * 24 * 60 * 60; // ~6 months, in seconds
+  const nowSec = Math.floor(Date.now() / 1000);
+
   const jobs: Job[] = [];
   for (const hit of data.hits) {
     const match = categorize(hit);
     if (!match) continue;
+    const postedAt = Math.max(hit.posted_at, hit.created_at);
+    if (nowSec - postedAt > STALE_AFTER && !hit.repost) continue;
     jobs.push({
       id: String(hit.post_pk),
       title: hit.title.trim(),
@@ -151,7 +164,7 @@ export async function fetchJobs(): Promise<{ jobs: Job[]; fetchedAt: number }> {
       // 80k's system last touched the record) is the more reliable recency
       // signal for those. For normally-refreshed listings posted_at is the
       // larger value, so this doesn't change anything for them.
-      postedAt: Math.max(hit.posted_at, hit.created_at),
+      postedAt,
       closesAt: hit.closes_at,
       category: match.category,
       core: match.core,
